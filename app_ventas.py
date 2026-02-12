@@ -2,67 +2,86 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 
-# --- CONFIGURACIÓN VISUAL (ESTILO APP MÓVIL) ---
+# --- CONFIGURACIÓN DE PÁGINA (LOOK IPHONE) ---
 st.set_page_config(page_title="Ruta 8087", page_icon="🚛", layout="centered")
 
-# CSS para forzar los colores de los cuadrados
+# --- CSS AVANZADO PARA CLONAR TU DISEÑO ---
 st.markdown("""
     <style>
-    /* Ocultar menú superior para ganar espacio */
+    /* Ocultar elementos de Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Estilo de los Botones de Productos (Simulación de Cuadrados) */
-    .stButton > button {
+    /* Fondo general gris claro como en la foto */
+    .stApp {
+        background-color: #f2f2f7;
+    }
+
+    /* ESTILO TARJETA DASHBOARD (Arriba) */
+    .dashboard-card {
+        background-color: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    .big-num { font-size: 24px; font-weight: bold; color: #000; }
+    .label { font-size: 11px; color: #8e8e93; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-green { color: #34c759; font-size: 24px; font-weight: bold; }
+    .stat-blue { color: #007aff; font-size: 24px; font-weight: bold; }
+
+    /* ESTILO TARJETA CLIENTE */
+    div.stButton > button {
+        background-color: white;
+        border: none;
+        border-radius: 0; /* Recto para parecer lista */
+        border-bottom: 1px solid #e5e5ea;
+        padding: 15px 5px;
+        text-align: left;
         width: 100%;
-        border-radius: 10px;
-        font-weight: bold;
-        height: 60px; /* Altura fija para parecer cuadrado */
-        white-space: pre-wrap; /* Permitir dos líneas de texto */
-        line-height: 1.2;
+        transition: background-color 0.2s;
+    }
+    div.stButton > button:active {
+        background-color: #e5e5ea;
+    }
+    div.stButton > button p {
+        font-size: 16px;
+        color: #000;
+        margin: 0;
     }
     
-    /* Colores Específicos */
-    /* Nota: Streamlit limita los colores de botones, usamos hacks visuales */
-    
-    /* Cajas de estado (Verde y Azul) */
-    .stAlert {
-        padding: 10px;
-        border-radius: 10px;
-    }
-    
+    /* Estilo para los botones de Venta (Rojo/Verde) */
+    .btn-vender { border-radius: 8px !important; margin-bottom: 8px; }
+
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN ARCHIVO ---
+# --- CONFIGURACIÓN DATOS ---
 FILE_PATH = 'Copia de LISTADO ACCIONES Q1.xlsx'
 
-# --- 1. CARGA DE DATOS OPTIMIZADA ---
 @st.cache_data
 def load_data():
     try:
         all_sheets = pd.read_excel(FILE_PATH, sheet_name=None, engine='openpyxl')
-        # Buscar hoja BITS
         sheet_found = next((k for k in all_sheets.keys() if 'BIT' in k.upper()), list(all_sheets.keys())[0])
         df = all_sheets[sheet_found]
-        # Filtrar Ruta
         if 'Route' in df.columns:
             df = df[df['Route'] == 8087].copy()
         return df, sheet_found
-    except Exception as e:
+    except:
         return pd.DataFrame(), ""
 
-# --- 2. GESTIÓN DE SESIÓN ---
+# --- GESTIÓN ESTADO ---
 if 'data' not in st.session_state:
     df_loaded, sheet_name = load_data()
     st.session_state.data = df_loaded
     st.session_state.sheet_name = sheet_name
     st.session_state.original = df_loaded.copy()
-    st.session_state.current_client = None # Para saber si estamos en detalle
+    st.session_state.current_client = None
 
 def save_data():
-    """Guardado silencioso en segundo plano"""
+    """Guarda en Excel Real"""
     try:
         all_sheets = pd.read_excel(FILE_PATH, sheet_name=None, engine='openpyxl')
         df_full = all_sheets[st.session_state.sheet_name]
@@ -79,117 +98,138 @@ def save_data():
             for sheet, data in all_sheets.items():
                 data.to_excel(writer, sheet_name=sheet, index=False)
     except:
-        pass # Ignorar errores menores al guardar para no interrumpir
+        pass
 
-def vender_producto(code, col):
-    # Buscar índice
-    mask = st.session_state.data['Customer Code'] == code
-    if mask.any():
-        idx = st.session_state.data[mask].index[0]
-        st.session_state.data.at[idx, col] = 1 # Marcar como 1
-        save_data()
-        st.rerun() # Recargar pantalla
+def toggle_venta(code, col):
+    idx = st.session_state.data[st.session_state.data['Customer Code'] == code].index[0]
+    st.session_state.data.at[idx, col] = 1
+    save_data()
+    st.rerun()
 
-def volver_inicio():
+def volver():
     st.session_state.current_client = None
     st.rerun()
 
-# --- 3. INTERFAZ PRINCIPAL ---
+# --- INTERFAZ PRINCIPAL ---
 
-# VISTA A: LISTADO (Optimizada para velocidad)
+# 1. PANTALLA LISTADO (Como tu foto)
 if st.session_state.current_client is None:
-    st.title("🚛 Ruta 8087")
+    st.markdown("### Ruta 8087")
     
-    # Buscador
-    query = st.text_input("🔍 Buscar Cliente", placeholder="Escribe nombre...")
-    
+    # BUSCADOR ESTILO IPHONE
+    col_search, col_mic = st.columns([6, 1])
+    with col_search:
+        query = st.text_input("Buscar", placeholder="🔍 Buscar cliente o ID...", label_visibility="collapsed")
+    with col_mic:
+        st.markdown("🎙️") # Icono visual, el usuario usa el teclado
+
+    # CÁLCULOS DASHBOARD
     df = st.session_state.data
+    prod_cols = [c for c in df.columns if 'Bits' in c]
+    total_refs = len(prod_cols) * len(df)
+    total_vendidos = df[prod_cols].sum().sum()
+    cobertura = (total_vendidos / total_refs) * 100 if total_refs > 0 else 0
+    ventas_hoy = total_vendidos - st.session_state.original[prod_cols].sum().sum() # Aprox
+
+    # DASHBOARD HTML (Igual a tu foto)
+    st.markdown(f"""
+    <div class="dashboard-card">
+        <div style="display:flex; justify-content: space-between;">
+            <div>
+                <div class="big-num">{len(df)}</div>
+                <div class="label">CLIENTES</div>
+            </div>
+            <div style="text-align:center;">
+                <div class="stat-blue">{int(ventas_hoy)}</div>
+                <div class="label">VENTAS HOY</div>
+            </div>
+        </div>
+        <div style="margin-top: 15px;">
+            <div class="stat-green">{int(cobertura)}%</div>
+            <div class="label">COBERTURA</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # FILTRADO
     if query:
-        # Filtrar
         mask = df['Customer Full Name'].str.contains(query, case=False, na=False) | \
                df['Customer Code'].astype(str).str.contains(query, na=False)
         df_filtered = df[mask]
     else:
-        # TRUCO DE VELOCIDAD: Si no busca nada, solo mostramos los 5 primeros
-        df_filtered = df.head(10)
+        df_filtered = df.head(50) # Cargar solo 50 para velocidad
 
-    # Mostrar lista
+    # LISTA DE CLIENTES
     for idx, row in df_filtered.iterrows():
-        # Tarjeta simple
-        label = f"🏢 {row['Customer Full Name']}\n📍 {row['Address']}"
-        if st.button(label, key=row['Customer Code']):
-            st.session_state.current_client = row['Customer Code']
-            st.rerun()
+        # Cálculos individuales
+        hechos = row[prod_cols].sum()
+        total = len(prod_cols)
+        code = row['Customer Code']
+        
+        # Tarjeta contenedora blanca
+        with st.container():
+            # Usamos columnas para maquetar: Texto Izq | Progreso Der
+            c1, c2 = st.columns([3, 1])
             
-    if not query:
-        st.caption("Escribe en el buscador para ver más clientes...")
+            with c1:
+                # El botón invisible es difícil, usamos botón con nombre
+                label = f"#{code}\n{row['Customer Full Name']}\n{row['Address']}"
+                if st.button(label, key=code):
+                    st.session_state.current_client = code
+                    st.rerun()
+            
+            with c2:
+                # Barra de progreso visual
+                st.write("") # Espacio para bajar
+                st.caption(f"{int(hechos)}/{total}")
+                progreso = hechos / total if total > 0 else 0
+                
+                # Color barra según progreso
+                color = "green" if progreso > 0.7 else "orange" if progreso > 0.3 else "red"
+                st.progress(progreso)
 
-# VISTA B: DETALLE DEL CLIENTE (Los Cuadrados)
+# 2. PANTALLA DETALLE (Ficha Cliente)
 else:
-    # Botón Volver
-    if st.button("⬅️ VOLVER A LA LISTA"):
-        volver_inicio()
-        
     code = st.session_state.current_client
-    # Obtener datos frescos
     row = st.session_state.data[st.session_state.data['Customer Code'] == code].iloc[0]
-    row_orig = st.session_state.original[st.session_state.original['Customer Code'] == code].iloc[0]
-    
-    st.header(row['Customer Full Name'])
-    
-    # Identificar productos
     prod_cols = [c for c in st.session_state.data.columns if 'Bits' in c]
-    
-    # Separar en listas
-    faltan = []
-    tienen_azul = [] # Vendido hoy
-    tienen_verde = [] # Ya tenía
-    
-    for prod in prod_cols:
-        val_actual = row[prod]
-        val_orig = row_orig[prod]
+
+    # Cabecera con botón volver
+    c_back, c_title = st.columns([1, 4])
+    with c_back:
+        if st.button("⬅️"):
+            volver()
+    with c_title:
+        st.markdown(f"**{row['Customer Full Name']}**")
+
+    st.info(f"📍 {row['Address']} | 🆔 {code}")
+
+    # Pestañas
+    tab1, tab2 = st.tabs(["🔴 FALTAN", "✅ TIENE"])
+
+    with tab1:
+        st.write("")
+        faltan = [p for p in prod_cols if row[p] == 0]
+        if not faltan:
+            st.success("¡Cliente Completo! 🏆")
         
-        nombre_corto = prod.replace('Bits ', '').replace('0,50€', '0.5€')
-        
-        if val_actual == 0:
-            faltan.append((prod, nombre_corto))
-        elif val_actual == 1 and val_orig == 0:
-            tienen_azul.append(nombre_corto)
-        else:
-            tienen_verde.append(nombre_corto)
-            
-    # --- SECCIÓN 1: FALTAN (BOTONES ROJOS) ---
-    st.subheader("🔴 FALTAN (Pulsar para Vender)")
-    if not faltan:
-        st.success("¡Todo vendido! 🎉")
-    else:
-        # Rejilla de 2 columnas
+        # Grid de botones
         cols = st.columns(2)
-        for i, (prod_full, prod_name) in enumerate(faltan):
+        for i, prod in enumerate(faltan):
             col_idx = i % 2
             with cols[col_idx]:
-                # El botón es "primary" (rojo/destacado en Streamlit)
-                if st.button(f"🛒 {prod_name}", key=f"btn_{prod_full}", type="primary", use_container_width=True):
-                    vender_producto(code, prod_full)
+                name = prod.replace('Bits ', '').replace('0,50€', '0.5€')
+                if st.button(f"🛒 {name}", key=f"v_{prod}", type="primary", use_container_width=True):
+                    toggle_venta(code, prod)
 
-    st.markdown("---")
-
-    # --- SECCIÓN 2: LO QUE YA TIENE ---
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.subheader("🔵 VENDIDO HOY")
-        if tienen_azul:
-            for item in tienen_azul:
-                st.info(f"👍 {item}") # Azul
-        else:
-            st.caption("Nada vendido hoy")
+    with tab2:
+        st.write("")
+        tiene = [p for p in prod_cols if row[p] == 1]
+        for prod in tiene:
+            name = prod.replace('Bits ', '')
+            orig_val = st.session_state.original[st.session_state.original['Customer Code'] == code].iloc[0][prod]
             
-    with c2:
-        st.subheader("🟢 YA TENÍA")
-        if tienen_verde:
-            for item in tienen_verde:
-                st.success(f"✅ {item}") # Verde
-        else:
-            st.caption("Inventario vacío")
-
+            if orig_val == 0:
+                st.markdown(f'<div style="background:#e3f2fd;padding:10px;border-radius:8px;margin-bottom:5px;color:#0d47a1"><b>🔵 {name}</b> (Vendido hoy)</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div style="background:#e8f5e9;padding:10px;border-radius:8px;margin-bottom:5px;color:#1b5e20"><b>🟢 {name}</b></div>', unsafe_allow_html=True)
