@@ -2,74 +2,55 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 
-# --- CONFIGURACIÓN ESTÉTICA (LOOK & FEEL IPHONE) ---
+# --- CONFIGURACIÓN VISUAL (ESTILO APP MÓVIL) ---
 st.set_page_config(page_title="Ruta 8087", page_icon="🚛", layout="centered")
 
-# CSS para imitar la Simulación (Botones grandes, tarjetas limpias)
+# CSS para forzar los colores de los cuadrados
 st.markdown("""
     <style>
-    /* Ocultar elementos molestos de Streamlit */
+    /* Ocultar menú superior para ganar espacio */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Estilo general */
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 5rem;
-    }
-    
-    /* Tarjetas de Clientes */
-    div.stButton > button {
+    /* Estilo de los Botones de Productos (Simulación de Cuadrados) */
+    .stButton > button {
         width: 100%;
-        border-radius: 12px;
-        border: 1px solid #e0e0e0;
-        padding: 15px;
-        text-align: left;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        transition: all 0.2s;
+        border-radius: 10px;
+        font-weight: bold;
+        height: 60px; /* Altura fija para parecer cuadrado */
+        white-space: pre-wrap; /* Permitir dos líneas de texto */
+        line-height: 1.2;
     }
     
-    /* Botón de VOLVER (más pequeño y simple) */
-    div.row-widget.stButton > button[kind="secondary"] {
-        border: none;
-        background: none;
-        color: #007aff;
-        box-shadow: none;
-        text-align: left;
-        padding: 0;
+    /* Colores Específicos */
+    /* Nota: Streamlit limita los colores de botones, usamos hacks visuales */
+    
+    /* Cajas de estado (Verde y Azul) */
+    .stAlert {
+        padding: 10px;
+        border-radius: 10px;
     }
     
-    /* Métricas estilo Dashboard */
-    div[data-testid="stMetricValue"] {
-        font-size: 1.8rem;
-        color: #007aff;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 # --- CONFIGURACIÓN ARCHIVO ---
 FILE_PATH = 'Copia de LISTADO ACCIONES Q1.xlsx'
-HOJA_DATOS = 'BITS'
 
-# --- 1. CARGA DE DATOS ---
+# --- 1. CARGA DE DATOS OPTIMIZADA ---
 @st.cache_data
 def load_data():
     try:
-        # Cargar Excel manteniendo todas las pestañas
         all_sheets = pd.read_excel(FILE_PATH, sheet_name=None, engine='openpyxl')
-        
-        # Buscar la hoja BITS
+        # Buscar hoja BITS
         sheet_found = next((k for k in all_sheets.keys() if 'BIT' in k.upper()), list(all_sheets.keys())[0])
         df = all_sheets[sheet_found]
-        
-        # Filtrar Ruta 8087
+        # Filtrar Ruta
         if 'Route' in df.columns:
             df = df[df['Route'] == 8087].copy()
-            
         return df, sheet_found
     except Exception as e:
-        st.error(f"Error cargando datos: {e}")
         return pd.DataFrame(), ""
 
 # --- 2. GESTIÓN DE SESIÓN ---
@@ -77,11 +58,11 @@ if 'data' not in st.session_state:
     df_loaded, sheet_name = load_data()
     st.session_state.data = df_loaded
     st.session_state.sheet_name = sheet_name
-    # Navegación: None = Lista, 'CODIGO' = Detalle Cliente
-    st.session_state.current_view = None 
+    st.session_state.original = df_loaded.copy()
+    st.session_state.current_client = None # Para saber si estamos en detalle
 
 def save_data():
-    """Guarda cambios en el Excel Real"""
+    """Guardado silencioso en segundo plano"""
     try:
         all_sheets = pd.read_excel(FILE_PATH, sheet_name=None, engine='openpyxl')
         df_full = all_sheets[st.session_state.sheet_name]
@@ -94,112 +75,121 @@ def save_data():
         df_act.reset_index(inplace=True)
         
         all_sheets[st.session_state.sheet_name] = df_full
-        
         with pd.ExcelWriter(FILE_PATH, engine='openpyxl') as writer:
             for sheet, data in all_sheets.items():
                 data.to_excel(writer, sheet_name=sheet, index=False)
-    except Exception as e:
-        st.error(f"Error guardando: {e}")
+    except:
+        pass # Ignorar errores menores al guardar para no interrumpir
 
-def toggle_producto(customer_code, col_name):
-    """Cambia de 0 a 1 y guarda"""
-    mask = st.session_state.data['Customer Code'] == customer_code
+def vender_producto(code, col):
+    # Buscar índice
+    mask = st.session_state.data['Customer Code'] == code
     if mask.any():
         idx = st.session_state.data[mask].index[0]
-        # Si es 0 lo pone a 1 (Venta). Si ya es 1, no hace nada (o podríamos deshacer)
-        current_val = st.session_state.data.at[idx, col_name]
-        if current_val == 0:
-            st.session_state.data.at[idx, col_name] = 1
-            save_data()
-            st.toast(f"✅ Venta registrada: {col_name}")
+        st.session_state.data.at[idx, col] = 1 # Marcar como 1
+        save_data()
+        st.rerun() # Recargar pantalla
 
-def ir_a_lista():
-    st.session_state.current_view = None
-    st.rerun()
-
-def ir_a_detalle(code):
-    st.session_state.current_view = code
+def volver_inicio():
+    st.session_state.current_client = None
     st.rerun()
 
 # --- 3. INTERFAZ PRINCIPAL ---
 
-# VISTA 1: LISTADO Y BUSCADOR (La "Home")
-if st.session_state.current_view is None:
-    st.subheader("🚛 Ruta 8087")
+# VISTA A: LISTADO (Optimizada para velocidad)
+if st.session_state.current_client is None:
+    st.title("🚛 Ruta 8087")
     
-    # Dashboard Mini
-    prod_cols = [c for c in st.session_state.data.columns if 'Bits' in c]
-    total_ventas = st.session_state.data[prod_cols].sum().sum()
-    st.metric("Productos Colocados", int(total_ventas))
+    # Buscador
+    query = st.text_input("🔍 Buscar Cliente", placeholder="Escribe nombre...")
     
-    st.markdown("---")
-    
-    # Buscador Grande
-    query = st.text_input("🔍 Buscar Cliente", placeholder="Nombre, calle o código...")
-    
-    # Filtrado
     df = st.session_state.data
     if query:
+        # Filtrar
         mask = df['Customer Full Name'].str.contains(query, case=False, na=False) | \
-               df['Address'].str.contains(query, case=False, na=False) | \
                df['Customer Code'].astype(str).str.contains(query, na=False)
         df_filtered = df[mask]
     else:
-        df_filtered = df # Mostrar todos (o podríamos mostrar vacío para limpiar)
+        # TRUCO DE VELOCIDAD: Si no busca nada, solo mostramos los 5 primeros
+        df_filtered = df.head(10)
 
-    # Lista de resultados como BOTONES (Clickable Rows)
-    st.write(f"Encontrados: {len(df_filtered)}")
-    
-    # Limitamos a 20 para no saturar el móvil si no hay búsqueda
-    for idx, row in df_filtered.head(20).iterrows():
-        # Calculamos progreso para mostrarlo en la tarjeta
-        hechos = row[prod_cols].sum()
-        total = len(prod_cols)
-        
-        # El texto del botón simula la tarjeta
-        texto_boton = f"""
-        🏢 {row['Customer Full Name']}
-        📍 {row['Address']}
-        📊 {int(hechos)}/{total} productos
-        """
-        # Al pulsar, vamos al detalle
-        if st.button(texto_boton, key=row['Customer Code']):
-            ir_a_detalle(row['Customer Code'])
+    # Mostrar lista
+    for idx, row in df_filtered.iterrows():
+        # Tarjeta simple
+        label = f"🏢 {row['Customer Full Name']}\n📍 {row['Address']}"
+        if st.button(label, key=row['Customer Code']):
+            st.session_state.current_client = row['Customer Code']
+            st.rerun()
+            
+    if not query:
+        st.caption("Escribe en el buscador para ver más clientes...")
 
-# VISTA 2: DETALLE DEL CLIENTE (Ficha Técnica)
+# VISTA B: DETALLE DEL CLIENTE (Los Cuadrados)
 else:
-    # Botón Volver estilo iOS
-    if st.button("← Volver a la lista", key="back", type="secondary"):
-        ir_a_lista()
-
-    # Datos del Cliente
-    code = st.session_state.current_view
-    cliente = st.session_state.data[st.session_state.data['Customer Code'] == code].iloc[0]
+    # Botón Volver
+    if st.button("⬅️ VOLVER A LA LISTA"):
+        volver_inicio()
+        
+    code = st.session_state.current_client
+    # Obtener datos frescos
+    row = st.session_state.data[st.session_state.data['Customer Code'] == code].iloc[0]
+    row_orig = st.session_state.original[st.session_state.original['Customer Code'] == code].iloc[0]
+    
+    st.header(row['Customer Full Name'])
+    
+    # Identificar productos
     prod_cols = [c for c in st.session_state.data.columns if 'Bits' in c]
-
-    st.title(cliente['Customer Full Name'])
-    st.caption(f"ID: {code} | {cliente['Address']}")
     
-    st.markdown("### 🛒 Oportunidades (Faltan)")
+    # Separar en listas
+    faltan = []
+    tienen_azul = [] # Vendido hoy
+    tienen_verde = [] # Ya tenía
     
-    # Grid de productos faltantes
-    faltan = [p for p in prod_cols if cliente[p] == 0]
-    
+    for prod in prod_cols:
+        val_actual = row[prod]
+        val_orig = row_orig[prod]
+        
+        nombre_corto = prod.replace('Bits ', '').replace('0,50€', '0.5€')
+        
+        if val_actual == 0:
+            faltan.append((prod, nombre_corto))
+        elif val_actual == 1 and val_orig == 0:
+            tienen_azul.append(nombre_corto)
+        else:
+            tienen_verde.append(nombre_corto)
+            
+    # --- SECCIÓN 1: FALTAN (BOTONES ROJOS) ---
+    st.subheader("🔴 FALTAN (Pulsar para Vender)")
     if not faltan:
-        st.success("¡Este cliente tiene TODO! 🏆")
+        st.success("¡Todo vendido! 🎉")
     else:
-        for prod in faltan:
-            # Botón ROJO grande para vender
-            name = prod.replace('Bits ', '')
-            if st.button(f"🔴 VENDER {name}", key=f"btn_{prod}", type="primary"):
-                toggle_producto(code, prod)
-                st.rerun() # Recargar para que desaparezca de la lista
-                
+        # Rejilla de 2 columnas
+        cols = st.columns(2)
+        for i, (prod_full, prod_name) in enumerate(faltan):
+            col_idx = i % 2
+            with cols[col_idx]:
+                # El botón es "primary" (rojo/destacado en Streamlit)
+                if st.button(f"🛒 {prod_name}", key=f"btn_{prod_full}", type="primary", use_container_width=True):
+                    vender_producto(code, prod_full)
+
     st.markdown("---")
-    st.markdown("### ✅ En Tienda (Stock)")
+
+    # --- SECCIÓN 2: LO QUE YA TIENE ---
+    c1, c2 = st.columns(2)
     
-    tiene = [p for p in prod_cols if cliente[p] == 1]
-    # Mostramos estos como texto o botones desactivados/verdes
-    if tiene:
-        st.info("Ya tiene: " + ", ".join([p.replace('Bits ', '') for p in tiene]))
+    with c1:
+        st.subheader("🔵 VENDIDO HOY")
+        if tienen_azul:
+            for item in tienen_azul:
+                st.info(f"👍 {item}") # Azul
+        else:
+            st.caption("Nada vendido hoy")
+            
+    with c2:
+        st.subheader("🟢 YA TENÍA")
+        if tienen_verde:
+            for item in tienen_verde:
+                st.success(f"✅ {item}") # Verde
+        else:
+            st.caption("Inventario vacío")
 
